@@ -14,24 +14,13 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.List;
 
-/**
- * Seeds the reference-data topics (`accounts`, `blacklist`) once, at startup.
- *
- * In a real bank this data would come from a core-banking system; here we publish a small,
- * fixed set so the join in Phase 3 has something to look up. Because both topics are COMPACTED,
- * re-running the app just overwrites each key with the same value (latest-per-key wins) — the
- * topics never grow, they always hold exactly this "current state".
- *
- * Implements {@link ApplicationRunner} so this runs once after the context is ready (topics
- * have been created by KafkaAdmin by then).
- */
+import static org.example.fraud.config.KafkaTopicConfig.*;
+
 @Component
 public class ReferenceDataLoader implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(ReferenceDataLoader.class);
 
-    // One KafkaTemplate (the single auto-configured one) reused for both value types; the JSON
-    // serializer handles whichever object we send. Key is always the entity id (String).
     private final KafkaTemplate<String, Object> kafka;
 
     public ReferenceDataLoader(KafkaTemplate<String, Object> kafka) {
@@ -53,9 +42,9 @@ public class ReferenceDataLoader implements ApplicationRunner {
                 new Account("ACC-1004", "CUST-4", "US", "HIGH",   new BigDecimal("5000.00"), Instant.parse("2022-11-20T00:00:00Z")),
                 new Account("ACC-1005", "CUST-5", "GB", "MEDIUM", new BigDecimal("2700.00"), Instant.parse("2024-05-05T00:00:00Z"))
         );
-        // Key = accountId -> compaction keeps the latest Account per accountId.
-        accounts.forEach(a -> kafka.send(KafkaTopicConfig.ACCOUNTS, a.accountId(), a));
-        log.info("seeded {} accounts into '{}'", accounts.size(), KafkaTopicConfig.ACCOUNTS);
+
+        accounts.forEach(a -> kafka.send(ACCOUNTS, a.accountId(), a));
+        log.info("seeded {} accounts into '{}'", accounts.size(), ACCOUNTS);
     }
 
     /** A few denylist entries: two merchants (in the generator's MERCH-1..59 range) and one country. */
@@ -65,8 +54,8 @@ public class ReferenceDataLoader implements ApplicationRunner {
                 new BlacklistEntry("MERCH-7",  "MERCHANT", "repeated chargebacks", Instant.parse("2026-05-10T00:00:00Z")),
                 new BlacklistEntry("US",       "COUNTRY",  "sanctioned corridor",  Instant.parse("2026-05-15T00:00:00Z"))
         );
-        // Key = entityId (a merchantId or a country code) -> compaction keeps the latest per entity.
-        entries.forEach(e -> kafka.send(KafkaTopicConfig.BLACKLIST, e.entityId(), e));
-        log.info("seeded {} blacklist entries into '{}'", entries.size(), KafkaTopicConfig.BLACKLIST);
+
+        entries.forEach(e -> kafka.send(BLACKLIST, e.entityId(), e));
+        log.info("seeded {} blacklist entries into '{}'", entries.size(), BLACKLIST);
     }
 }

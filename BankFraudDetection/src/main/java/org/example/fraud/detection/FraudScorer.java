@@ -9,10 +9,6 @@ import org.springframework.stereotype.Component;
 import java.util.Collection;
 import java.util.Map;
 
-/**
- * Central scoring: turns the set of fired rules into a 0..1 score, a severity, and an
- * alert/no-alert decision. Weights come from application.yml (DESIGN §6).
- */
 @Component
 public class FraudScorer {
 
@@ -37,7 +33,6 @@ public class FraudScorer {
         this.alertScore = alertScore;
     }
 
-    /** Sum the weights of the fired rules, capped at 1.0. */
     public double aggregate(Collection<String> firedRules) {
         double sum = firedRules.stream().mapToDouble(r -> weights.getOrDefault(r, 0.0)).sum();
         return Math.min(1.0, sum);

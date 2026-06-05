@@ -18,11 +18,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.support.serializer.JsonSerde;
 import org.springframework.stereotype.Component;
 
-/**
- * Unified detection topology (Kafka Streams): reads `transactions.enriched`, runs every rule per
- * transaction in {@link RiskEvaluationProcessor}, and emits one combined {@link FraudAlert}.
- * Velocity and amount-anomaly keep per-account state in the two stores registered here.
- */
 @Component
 public class FraudScoringTopology {
 

@@ -1,46 +1,38 @@
-# docker-compose.yml — local streaming infra (Kafka + Kafka UI), KRaft mode (no Zookeeper).
-#   docker compose up -d      -> start Kafka + Kafka UI
-#   docker compose down       -> stop them (add -v to also wipe data)
-#
-# One Kafka node that is BOTH broker and controller.
+
 services:
 
   kafka:
     image: apache/kafka:3.8.0
     container_name: kafka
     ports:
-      - "9092:9092"          # host 9092 -> broker HOST listener, for the Spring app on your laptop
+      - "9092:9092"
     environment:
-      # --- KRaft node identity ---
+
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
 
-      # --- Listeners: 3 of them, each for a different caller ---
-      # CONTROLLER -> internal raft chatter   HOST -> your laptop   DOCKER -> other containers (kafka-ui)
       KAFKA_LISTENERS: CONTROLLER://:9093,HOST://:9092,DOCKER://:29092
       KAFKA_ADVERTISED_LISTENERS: HOST://localhost:9092,DOCKER://kafka:29092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,HOST:PLAINTEXT,DOCKER:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: DOCKER
 
-      # --- Single-node sizing (defaults assume a 3-broker cluster) ---
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
 
-      # We declare topics ourselves (KafkaTopicConfig), so don't silently auto-create them.
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
 
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
     ports:
-      - "8081:8080"          # open http://localhost:8081
+      - "8081:8080"
     environment:
       KAFKA_CLUSTERS_0_NAME: local
-      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092   # reach the broker over the DOCKER listener
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
       DYNAMIC_CONFIG_ENABLED: "true"
     depends_on:
       - kafka

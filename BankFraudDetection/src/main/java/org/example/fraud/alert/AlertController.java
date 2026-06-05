@@ -7,10 +7,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-/**
- * REST view of the stored alerts.
- *   GET /api/alerts   -> all alerts, newest first
- */
 @RestController
 @RequestMapping("/api/alerts")
 public class AlertController {

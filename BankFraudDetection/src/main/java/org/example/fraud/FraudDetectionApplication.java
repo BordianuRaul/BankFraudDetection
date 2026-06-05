@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 @SpringBootApplication
-@EnableScheduling   // turns on @Scheduled, used by the TransactionGenerator producer
+@EnableScheduling
 public class FraudDetectionApplication {
 
     public static void main(String[] args) {

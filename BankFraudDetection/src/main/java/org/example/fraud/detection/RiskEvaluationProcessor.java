@@ -19,12 +19,6 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-/**
- * Unified detection: runs ALL rules for one enriched transaction and emits a single FraudAlert
- * carrying every rule that fired plus their combined score. Stateless rules read enrichment flags;
- * velocity and amount-anomaly read/update per-account state stores — so every rule contributes to
- * one per-transaction risk score (DESIGN §6).
- */
 class RiskEvaluationProcessor implements Processor<String, EnrichedTransaction, String, FraudAlert> {
 
     private static final Logger log = LoggerFactory.getLogger(RiskEvaluationProcessor.class);
@@ -75,16 +69,16 @@ class RiskEvaluationProcessor implements Processor<String, EnrichedTransaction, 
         String accountId = record.key();
         EnrichedTransaction enriched = record.value();
         if (accountId == null || enriched == null) return;
-        Transaction tx = enriched.transaction();
+        Transaction transaction = enriched.transaction();
 
         List<String> triggered = new ArrayList<>();
         List<String> reasons = new ArrayList<>();
 
-        highAmountRule.check(tx).ifPresent(r -> { triggered.add(HighAmountRule.NAME); reasons.add(r); });
+        highAmountRule.check(transaction).ifPresent(r -> { triggered.add(HighAmountRule.NAME); reasons.add(r); });
         homeCountryRule.check(enriched).ifPresent(r -> { triggered.add(HomeCountryRule.NAME); reasons.add(r); });
         blacklistRule.check(enriched).ifPresent(r -> { triggered.add(BlacklistRule.NAME); reasons.add(r); });
         checkVelocity(accountId, record.timestamp()).ifPresent(r -> { triggered.add(VELOCITY); reasons.add(r); });
-        checkAmountAnomaly(accountId, tx).ifPresent(r -> { triggered.add(AMOUNT_ANOMALY); reasons.add(r); });
+        checkAmountAnomaly(accountId, transaction).ifPresent(r -> { triggered.add(AMOUNT_ANOMALY); reasons.add(r); });
 
         if (triggered.isEmpty()) return;
 
@@ -93,27 +87,24 @@ class RiskEvaluationProcessor implements Processor<String, EnrichedTransaction, 
 
         String severity = scorer.severity(score);
         String explanation = String.join("; ", reasons);
-        FraudAlert alert = new FraudAlert(UUID.randomUUID().toString(), tx.transactionId(), accountId,
+        FraudAlert alert = new FraudAlert(UUID.randomUUID().toString(), transaction.transactionId(), accountId,
                 score, severity, triggered, explanation, Instant.now());
         context.forward(new Record<>(accountId, alert, record.timestamp()));
         log.warn("ALERT [{}] {} {} -> {}", severity, accountId, triggered, explanation);
     }
-
-    /** Sliding-window velocity: count this account's tx in the last window; fire while over the threshold. */
     private Optional<String> checkVelocity(String accountId, long nowMs) {
         RecentActivity activity = velocityStore.get(accountId);
         if (activity == null) activity = RecentActivity.empty();
         activity = activity.record(nowMs, velocityWindowSeconds * 1000);
         velocityStore.put(accountId, activity);
         if (activity.count() > velocityCount) {
-            return Optional.of("%d tx within %ds".formatted(activity.count(), velocityWindowSeconds));
+            return Optional.of("%d transactions within %ds".formatted(activity.count(), velocityWindowSeconds));
         }
         return Optional.empty();
     }
 
-    /** Amount anomaly: compare against the account's running mean/stddev (pre-update), then fold it in. */
-    private Optional<String> checkAmountAnomaly(String accountId, Transaction tx) {
-        double amount = tx.amount().doubleValue();
+    private Optional<String> checkAmountAnomaly(String accountId, Transaction transaction) {
+        double amount = transaction.amount().doubleValue();
         AccountStats stats = amountStore.get(accountId);
         if (stats == null) stats = AccountStats.empty();
         Optional<String> reason = Optional.empty();
