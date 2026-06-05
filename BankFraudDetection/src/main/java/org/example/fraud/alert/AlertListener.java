@@ -7,7 +7,7 @@ import org.springframework.stereotype.Component;
 
 /**
  * Consumes `fraud.alerts` and persists each alert to H2 via {@link AlertRepository}.
- *
+ *Sio
  * Its own groupId ("alert-store") makes the storage stage an independent consumer of
  * the alerts stream — exactly the decoupling the topic gives us.
  */

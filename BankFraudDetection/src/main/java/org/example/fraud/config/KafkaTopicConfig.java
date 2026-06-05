@@ -27,6 +27,17 @@ public class KafkaTopicConfig {
                 .build();
     }
 
+    /** Transactions decorated with their account's reference data, keyed by accountId. */
+    public static final String TRANSACTIONS_ENRICHED = "transactions.enriched";
+
+    @Bean
+    public NewTopic transactionsEnrichedTopic() {
+        return TopicBuilder.name(TRANSACTIONS_ENRICHED)
+                .partitions(3)   // same key (accountId) & lane count as transactions
+                .replicas(1)
+                .build();        // delete policy (default): it's a derived event stream, not state
+    }
+
     /** One record per detected fraud alert, keyed by accountId. */
     public static final String FRAUD_ALERTS = "fraud.alerts";
 
@@ -35,6 +46,30 @@ public class KafkaTopicConfig {
         return TopicBuilder.name(FRAUD_ALERTS)
                 .partitions(3)
                 .replicas(1)
+                .build();
+    }
+
+    /** Reference data: the current Account per accountId. Compacted = keep only the latest per key. */
+    public static final String ACCOUNTS = "accounts";
+
+    @Bean
+    public NewTopic accountsTopic() {
+        return TopicBuilder.name(ACCOUNTS)
+                .partitions(3)   // keyed by accountId, like transactions -> same lanes
+                .replicas(1)
+                .compact()       // cleanup.policy=compact -> a lookup table, not an append-only log
+                .build();
+    }
+
+    /** Reference data: the current BlacklistEntry per entityId (merchant or country). Compacted. */
+    public static final String BLACKLIST = "blacklist";
+
+    @Bean
+    public NewTopic blacklistTopic() {
+        return TopicBuilder.name(BLACKLIST)
+                .partitions(1)   // tiny denylist; 1 partition is plenty (matches DESIGN.md §4)
+                .replicas(1)
+                .compact()
                 .build();
     }
 }

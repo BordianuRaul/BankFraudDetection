@@ -19,7 +19,7 @@ spring:
         # JSON deserializer will only build objects from these packages (safety).
         spring.json.trusted.packages: "org.example.fraud.model"
 
-    # Kafka Streams settings. Inert until a class is annotated @EnableKafkaStreams (Milestone 4).
+    # Kafka Streams settings. Activated by @EnableKafkaStreams (KafkaStreamsConfig).
     streams:
       application-id: fraud-streams
       properties:
@@ -41,8 +41,27 @@ spring:
 
 # Detection knobs — tunable during the demo, read later by the rules/scorer.
 fraud:
+  generator:
+    interval-ms: 1000            # one transaction per second (the @Scheduled tick)
+    burst:
+      every-n-ticks: 20          # ~1 tick in 20, fire a velocity BURST instead of a single tx
+      size: 10                   # transactions in a burst (one account, all within one tick)
   thresholds:
     high-amount: 10000
-    velocity-count: 5
-    velocity-window-seconds: 60
+    # Velocity: alert when an account exceeds `velocity-count` transactions within a
+    # `velocity-window-seconds` tumbling window. Tuned so normal ~1 tx/s traffic (~2 per
+    # account per 10s) stays well under 7, but a burst of 10 trips it.
+    velocity-count: 7
+    velocity-window-seconds: 10
+    # Amount anomaly: flag amount > mean + (anomaly-stddevs)*stddev of the account's history,
+    # but only after anomaly-min-samples observations (early stats are meaningless).
+    anomaly-stddevs: 3
+    anomaly-min-samples: 30
     alert-score: 0.5
+  weights:                 # per-rule contribution to the 0..1 score (DESIGN §6); summed, capped at 1.0
+    high-amount: 0.5
+    velocity: 0.7
+    impossible-travel: 0.9
+    blacklist: 1.0
+    amount-anomaly: 0.6
+    home-country: 0.2

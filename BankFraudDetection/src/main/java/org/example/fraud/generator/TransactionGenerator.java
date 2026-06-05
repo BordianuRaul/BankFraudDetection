@@ -4,6 +4,7 @@ import org.example.fraud.config.KafkaTopicConfig;
 import org.example.fraud.model.Transaction;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -21,6 +22,10 @@ import java.util.concurrent.ThreadLocalRandom;
  * Every tick it builds one random {@link Transaction} and PRODUCES it to the
  * `transactions` topic, keyed by accountId. Keying by accountId means all of one
  * account's events go to the SAME partition, so they stay ordered (theory §1.7).
+ *
+ * ~1 tick in `burstEveryNTicks` it instead fires a BURST of `burstSize` transactions for a
+ * single account, all within one tick -> that account crosses the velocity window's count
+ * threshold, giving the velocity rule an "abnormal" pattern to detect (DESIGN §11 scenario).
  */
 @Component
 public class TransactionGenerator {
@@ -34,32 +39,54 @@ public class TransactionGenerator {
     private static final List<String> CATEGORIES = List.of("GROCERIES", "ELECTRONICS", "TRAVEL", "FUEL", "RESTAURANT");
 
     private final KafkaTemplate<String, Transaction> kafka;
+    private final int burstEveryNTicks;   // ~1-in-N chance per tick to fire a burst instead of one tx
+    private final int burstSize;          // how many transactions a burst sends for one account
 
-    public TransactionGenerator(KafkaTemplate<String, Transaction> kafka) {
+    public TransactionGenerator(KafkaTemplate<String, Transaction> kafka,
+                                @Value("${fraud.generator.burst.every-n-ticks:20}") int burstEveryNTicks,
+                                @Value("${fraud.generator.burst.size:10}") int burstSize) {
         this.kafka = kafka;
+        this.burstEveryNTicks = burstEveryNTicks;
+        this.burstSize = burstSize;
     }
 
-    /** Produces one transaction per interval (default 1s; override with fraud.generator.interval-ms). */
+    /** Each tick: usually one transaction, but ~1 in N ticks a whole burst (the velocity scenario). */
     @Scheduled(fixedRateString = "${fraud.generator.interval-ms:1000}")
     public void emit() {
-        Transaction tx = randomTransaction();
+        if (ThreadLocalRandom.current().nextInt(burstEveryNTicks) == 0) {
+            emitBurst();
+        } else {
+            send(randomTransaction(pick(ACCOUNTS)));
+        }
+    }
+
+    /** Fire `burstSize` transactions for ONE account within this tick -> trips the velocity window. */
+    private void emitBurst() {
+        String account = pick(ACCOUNTS);
+        for (int i = 0; i < burstSize; i++) {
+            send(randomTransaction(account));
+        }
+        log.warn("BURST -> {} x{} (velocity scenario)", account, burstSize);
+    }
+
+    private void send(Transaction tx) {
         // send(topic, KEY, VALUE) -> the key (accountId) decides the partition.
         kafka.send(KafkaTopicConfig.TRANSACTIONS, tx.accountId(), tx);
         log.info("produced -> {} {} {} {}", tx.accountId(), tx.amount(), tx.currency(), tx.channel());
     }
 
-    private Transaction randomTransaction() {
+    /** Builds one random transaction for the given account (account fixed so a burst hits one lane). */
+    private Transaction randomTransaction(String accountId) {
         ThreadLocalRandom r = ThreadLocalRandom.current();
         // ~1 in 12 transactions is a suspicious "big-ticket" amount (above the high-amount
-        // threshold) so the HighAmountRule has something to fire on. Scripted fraud scenarios
-        // (velocity, impossible travel) come in later phases.
+        // threshold) so the HighAmountRule has something to fire on.
         boolean bigTicket = r.nextInt(12) == 0;
         BigDecimal amount = bigTicket
                 ? BigDecimal.valueOf(r.nextDouble(15_000.0, 30_000.0)).setScale(2, RoundingMode.HALF_UP)
                 : BigDecimal.valueOf(r.nextDouble(1.0, 500.0)).setScale(2, RoundingMode.HALF_UP);
         return new Transaction(
                 UUID.randomUUID().toString(),
-                pick(ACCOUNTS),
+                accountId,
                 "CARD-" + r.nextInt(1, 100),
                 amount,
                 "EUR",
